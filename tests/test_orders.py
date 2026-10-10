@@ -181,3 +181,15 @@ class TestOrderAPI:
         # Attempt to delete a 'cancelled' order (Should succeed 200)
         res_del_success = client.delete(f'/orders/{order_id}', headers=headers)
         assert res_del_success.status_code == 200
+
+    def test_order_items_include_product_name_and_subtotal(self, client, app):
+        """Scenario: Order items expose product_name and a computed subtotal (not just product_id)"""
+        b1_token, _, _ = setup_checkout_scenario(client, app)
+        headers = {"Authorization": f"Bearer {b1_token}"}
+        client.post('/orders/checkout', json={"shipping_address": "Jl. Test No. 1"}, headers=headers)
+
+        orders = client.get('/orders', headers=headers).get_json()["orders"]
+        items = [item for order in orders for item in order["order_items"]]
+        item_a = next(i for i in items if i["product_name"] == "Item A")
+        assert item_a["quantity"] == 2
+        assert item_a["subtotal"] == 2000.0

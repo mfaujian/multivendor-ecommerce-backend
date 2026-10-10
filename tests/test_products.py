@@ -139,4 +139,43 @@ class TestProductAPI:
         assert res_delete.status_code == 409
         assert "tied to one or more active orders" in res_delete.get_json()["error"]
 
+    def test_category_filter_includes_subcategories(self, client, app):
+        """Scenario: Filtering by a parent category also returns products in its subcategories"""
+        token, _ = setup_product_prerequisites(client, app)
+        with app.app_context():
+            parent = Categories(name="Industrial Parent")
+            db.session.add(parent)
+            db.session.flush()
+            child = Categories(name="Industrial Child", parent_id=parent.id)
+            db.session.add(child)
+            db.session.commit()
+            parent_id, child_id = parent.id, child.id
+
+        headers = {"Authorization": f"Bearer {token}"}
+        client.post('/products', json={"category_id": child_id, "name": "Child Product", "price": 1000, "stock": 5}, headers=headers)
+
+        by_parent = client.get(f'/products?category_id={parent_id}').get_json()["data"]
+        by_child = client.get(f'/products?category_id={child_id}').get_json()["data"]
+        assert [p["name"] for p in by_parent] == ["Child Product"]
+        assert [p["name"] for p in by_child] == ["Child Product"]
+
+    def test_product_response_includes_category_and_seller_names(self, client, app):
+        """Scenario: Product payloads embed category and store names (no extra lookups needed)"""
+        token, cat_id = setup_product_prerequisites(client, app)
+        client.post('/products', json={"category_id": cat_id, "name": "Named Product", "price": 500, "stock": 1},
+                    headers={"Authorization": f"Bearer {token}"})
+        product = client.get('/products?name=Named').get_json()["data"][0]
+        assert product["category"]["name"] == "Tech"
+        assert product["seller"]["store_name"] == "Gadget Store"
+
+    def test_products_are_listed_newest_first(self, client, app):
+        """Scenario: Listing order is deterministic (highest id first)"""
+        token, cat_id = setup_product_prerequisites(client, app)
+        headers = {"Authorization": f"Bearer {token}"}
+        for name in ("First Item", "Second Item", "Third Item"):
+            client.post('/products', json={"category_id": cat_id, "name": name, "price": 10, "stock": 1}, headers=headers)
+        names = [p["name"] for p in client.get('/products').get_json()["data"]]
+        assert names == ["Third Item", "Second Item", "First Item"]
+
+
 

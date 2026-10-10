@@ -20,6 +20,16 @@ class ProductUpdateSchema(Schema):
     image_url = fields.Str(allow_none=True)
 
 
+class ProductCategorySummarySchema(Schema):
+    id = fields.Int()
+    name = fields.Str()
+
+
+class ProductSellerSummarySchema(Schema):
+    id = fields.Int()
+    store_name = fields.Str()
+
+
 class ProductResponseSchema(Schema):
     id = fields.Int(dump_only=True)
     category_id = fields.Int()
@@ -33,3 +43,5 @@ class ProductResponseSchema(Schema):
     is_active = fields.Bool()
     created_at = fields.DateTime(format="iso")
     updated_at = fields.DateTime(format="iso")
+    category = fields.Nested(ProductCategorySummarySchema, dump_only=True)
+    seller = fields.Nested(ProductSellerSummarySchema, dump_only=True)

@@ -36,17 +36,34 @@ def create_product(seller_id, validated_data):
         logging.error(f"[DB ERROR]: {str(e.__dict__.get('orig', e))}")
         return None, {"message": "A database error occurred processing your request.", "status_code": 500}
 
+def get_category_tree_ids(category_id):
+    """Return the given category ID plus the IDs of all its descendant subcategories.
+
+    Products are assigned to leaf subcategories, so filtering by a top-level
+    category must also match everything underneath it.
+    """
+    ids = {category_id}
+    frontier = [category_id]
+    while frontier:
+        rows = db.session.query(Categories.id).filter(Categories.parent_id.in_(frontier)).all()
+        frontier = [row.id for row in rows if row.id not in ids]
+        ids.update(frontier)
+    return ids
 
 def get_products(filters, page, limit):
     query = Products.query.filter_by(is_active=True)
     if filters.get('category_id'):
-        query = query.filter_by(category_id=filters['category_id'])
+        query = query.filter(Products.category_id.in_(get_category_tree_ids(filters['category_id'])))
     if filters.get('name'):
         query = query.filter(Products.name.ilike(f"%{filters['name']}%"))
     if filters.get('min_price') is not None:
         query = query.filter(Products.price >= filters['min_price'])
     if filters.get('max_price') is not None:
         query = query.filter(Products.price <= filters['max_price'])
+
+    # Newest first, with id as a stable tie-breaker so pagination is deterministic
+    query = query.order_by(Products.id.desc())
+    
     return query.paginate(page=page, per_page=limit, error_out=False)
 
 

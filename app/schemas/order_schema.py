@@ -14,10 +14,10 @@ class OrderStatusUpdateSchema(Schema):
 
 class OrderItemResponseSchema(Schema):
     product_id = fields.Int()
-    product_name = fields.Str()
+    product_name = fields.Function(lambda item: item.product.name if item.product else None)
     quantity = fields.Int()
     unit_price = fields.Float()
-    subtotal = fields.Float()
+    subtotal = fields.Function(lambda item: float(item.unit_price) * item.quantity)
 
 
 class OrderResponseSchema(Schema):
