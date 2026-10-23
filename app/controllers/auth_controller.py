@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, get_jwt
 from app.schemas import LoginSchema, UserRegisterSchema, UserResponseSchema
 from app.services import auth_service, user_service
@@ -19,7 +19,7 @@ user_response_schema = UserResponseSchema()
 # =========================================================================
 
 @users_bp.route('', methods = ['POST'])
-@limiter.limit("10 per hour")
+@limiter.limit(lambda: current_app.config["RATELIMIT_REGISTER"])
 def register_user():
     """Register a new user
     ---
@@ -187,7 +187,7 @@ def get_current_user():
 # =========================================================================
 
 @auth_bp.route('/login', methods=['POST'])
-@limiter.limit("5 per minute")
+@limiter.limit(lambda: current_app.config["RATELIMIT_LOGIN"])
 def login():
     """Login and generate JWT Token
     ---

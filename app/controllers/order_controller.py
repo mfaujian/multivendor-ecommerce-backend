@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, get_jwt
-from app.schemas import CheckoutSchema, OrderStatusUpdateSchema, OrderResponseSchema
+from app.middleware.auth import roles_required
+from app.schemas import CheckoutSchema, CreateOrderSchema, OrderStatusUpdateSchema, PaymentUpdateSchema, OrderResponseSchema
 from app.services import order_service
 
 # Blueprint
@@ -8,6 +9,8 @@ order_bp = Blueprint('order', __name__, url_prefix='/orders')
 
 # Schemas
 checkout_schema = CheckoutSchema()
+create_schema = CreateOrderSchema()
+payment_schema = PaymentUpdateSchema()
 status_schema = OrderStatusUpdateSchema()
 response_schema = OrderResponseSchema()
 list_response_schema = OrderResponseSchema(many=True)
@@ -15,6 +18,178 @@ list_response_schema = OrderResponseSchema(many=True)
 # =========================================================================
 # ORDER MODULE (BLUEPRINT: order_bp | PREFIX: /orders)
 # =========================================================================
+
+@order_bp.route('', methods=['POST'])
+@jwt_required()
+def create_order():
+    """Create orders from a list of items (one order per supplier)
+    ---
+    tags:
+      - Orders
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  product_id:
+                    type: integer
+                  quantity:
+                    type: integer
+            shipping_address_id:
+              type: integer
+            shipping_address:
+              type: string
+            po_number:
+              type: string
+            notes:
+              type: string
+            payment_method:
+              type: string
+              enum: [bank_transfer, request_terms]
+            requested_delivery_date:
+              type: string
+              example: "2026-12-01"
+    responses:
+      201:
+        description: Orders created (one per supplier)
+      400:
+        description: Validation error or missing address
+      401:
+        description: Unauthorized
+      422:
+        description: Some items cannot be ordered (stock, MOQ, inactive). See "details".
+    """
+    data = request.get_json(silent=True) or {}
+    validated_data = create_schema.load(data)
+    user_id = int(get_jwt_identity())
+    orders, error = order_service.create_order(user_id, validated_data)
+    if error:
+        body = {"error": error["message"]}
+        if error.get("details"):
+            body["details"] = error["details"]
+        return jsonify(body), error["status_code"]
+    return jsonify({
+        "message": "Order placed successfully!",
+        "orders_created": len(orders),
+        "orders": list_response_schema.dump(orders)
+    }), 201
+
+
+@order_bp.route('/all', methods=['GET'])
+@jwt_required()
+@roles_required('admin')
+def get_all_orders():
+    """Admin: list every order in the marketplace
+    ---
+    tags:
+      - Orders
+    security:
+      - Bearer: []
+    parameters:
+      - in: query
+        name: status
+        type: string
+        enum: [pending, processing, shipped, delivered, cancelled]
+      - in: query
+        name: search
+        type: string
+        description: Buyer name, buyer email or PO number
+      - in: query
+        name: sort
+        type: string
+        enum: [asc, desc]
+      - in: query
+        name: page
+        type: integer
+      - in: query
+        name: limit
+        type: integer
+    responses:
+      200:
+        description: Paginated orders with buyer and supplier names
+      401:
+        description: Unauthorized
+      403:
+        description: Admin role required
+    """
+    sort = request.args.get('sort', 'desc', type=str).lower()
+    if sort not in ('asc', 'desc'):
+        return jsonify({"error": "Invalid 'sort' value. Must be 'asc' or 'desc'."}), 400
+    paginated = order_service.get_all_orders(
+        status_filter=request.args.get('status', type=str),
+        search=request.args.get('search', type=str),
+        sort=sort,
+        page=request.args.get('page', 1, type=int),
+        limit=request.args.get('limit', 10, type=int),
+    )
+    return jsonify({
+        "message": "Orders retrieved successfully",
+        "orders": list_response_schema.dump(paginated.items),
+        "meta": {
+            "current_page": paginated.page,
+            "total_pages": paginated.pages,
+            "total_items": paginated.total,
+            "items_per_page": paginated.per_page,
+            "has_next": paginated.has_next,
+            "has_prev": paginated.has_prev
+        }
+    }), 200
+
+
+@order_bp.route('/<uuid:order_id>/payment', methods=['PUT'])
+@jwt_required()
+@roles_required('admin')
+def update_payment(order_id):
+    """Admin: mark an order paid / approve payment terms
+    ---
+    tags:
+      - Orders
+    security:
+      - Bearer: []
+    parameters:
+      - in: path
+        name: order_id
+        type: string
+        required: true
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - payment_status
+          properties:
+            payment_status:
+              type: string
+              enum: [unpaid, paid, terms_requested, terms_approved]
+    responses:
+      200:
+        description: Payment status updated
+      403:
+        description: Admin role required
+      404:
+        description: Order not found
+    """
+    validated_data = payment_schema.load(request.get_json(silent=True) or {})
+    order, error = order_service.update_payment_status(order_id, validated_data)
+    if error:
+        return jsonify({"error": error["message"]}), error["status_code"]
+    return jsonify({
+        "message": f"Payment status updated to '{order.payment_status}'!",
+        "order": response_schema.dump(order)
+    }), 200
+
 
 @order_bp.route('/checkout', methods=['POST'])
 @jwt_required()

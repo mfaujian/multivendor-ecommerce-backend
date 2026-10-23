@@ -7,12 +7,13 @@ from flask_cors import CORS
 from sqlalchemy.exc import SQLAlchemyError
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
-from app.middleware.errors import register_error_handlers
+from werkzeug.middleware.proxy_fix import ProxyFix
+from app.middleware.errors import register_error_handlers, register_jwt_handlers
 from flasgger import Swagger
 from app.config import Config
 from app.utils import db, limiter
-from app.models import Users, Sellers, Categories, Products, Carts, cart_items, Orders, OrderItems
-from app.controllers import auth_bp, users_bp, category_bp, seller_bp, product_bp, cart_bp, order_bp
+from app.models import Users, Sellers, Categories, Products, PriceTiers, Addresses, Carts, cart_items, Orders, OrderItems
+from app.controllers import auth_bp, users_bp, category_bp, seller_bp, product_bp, cart_bp, order_bp, address_bp
 
 def setup_logging(app):
     formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
@@ -42,8 +43,12 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
-    origins = app.config.get('CORS_ORIGINS', '*')
-    CORS(app, origins=origins.split(',') if origins != '*' else '*')
+    # Behind Railway's proxy the real client IP is in X-Forwarded-For (needed for rate limiting)
+    if app.config.get('TRUST_PROXY_HOPS', 0) > 0:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=app.config['TRUST_PROXY_HOPS'])
+
+    origins = app.config.get('CORS_ORIGINS', '*').strip()
+    CORS(app, origins=[o.strip() for o in origins.split(',') if o.strip()] if origins != '*' else '*')
 
     # Register Flask extensions
     setup_logging(app)
@@ -51,7 +56,8 @@ def create_app(test_config=None):
     db.init_app(app)
     limiter.init_app(app)
     Migrate(app, db)
-    JWTManager(app)
+    jwt = JWTManager(app)
+    register_jwt_handlers(jwt)
     
     swagger_template = {
         "info": {
@@ -100,6 +106,7 @@ def create_app(test_config=None):
     app.register_blueprint(product_bp)
     app.register_blueprint(cart_bp)
     app.register_blueprint(order_bp)
+    app.register_blueprint(address_bp)
 
     # Endpoint routes for checking database connection
     @app.route('/health')

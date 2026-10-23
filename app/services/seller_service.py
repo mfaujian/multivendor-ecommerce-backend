@@ -76,3 +76,6 @@ def close_store(user_id):
         db.session.rollback()
         logging.error(f"[DB ERROR]: {str(e.__dict__.get('orig', e))}")
         return None, {"message": "A database error occurred processing your request.", "status_code": 500}
+
+def list_active_sellers():
+    return Sellers.query.filter_by(is_active=True).order_by(Sellers.store_name.asc()).all()

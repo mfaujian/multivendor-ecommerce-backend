@@ -19,6 +19,13 @@ class Orders(db.Model):
     )
     total_amount = db.Column(db.Numeric(12, 2), nullable = False)
     shipping_address = db.Column(db.Text, nullable=  False)
+
+    po_number = db.Column(db.String(60), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    payment_method = db.Column(db.String(20), nullable=False, default='bank_transfer', server_default='bank_transfer')
+    payment_status = db.Column(db.String(20), nullable=False, default='unpaid', server_default='unpaid')
+    requested_delivery_date = db.Column(db.Date, nullable=True)
+
     is_active = db.Column(db.Boolean, default=True, nullable=False)
 
     created_at = db.Column(db.DateTime(timezone=True), server_default = db.func.now(), index = True)
@@ -45,6 +52,9 @@ class OrderItems(db.Model):
     
     quantity = db.Column(db.Integer, nullable=False)
     unit_price = db.Column(db.Numeric(12, 2), nullable=False)
+
+    sku = db.Column(db.String(64), nullable=True)
+    product_name = db.Column(db.String(255), nullable=True)
 
     __table_args__ = (
         db.CheckConstraint('quantity > 0', name='order_items_quantity_check'),

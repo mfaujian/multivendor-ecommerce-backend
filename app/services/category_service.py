@@ -76,6 +76,22 @@ def delete_category(category_id):
     if not category:
         return None, {"message": "Category not found!", "status_code": 404}
 
+    # Guard 1: products (active or not) still point at this category
+    product_count = db.session.query(Products.id).filter(Products.category_id == category_id).count()
+    if product_count:
+        return None, {
+            "message": f"Cannot delete '{category.name}' because {product_count} product(s) are still assigned to it.",
+            "status_code": 409
+        }
+
+    # Guard 2: subcategories would otherwise be silently promoted to top-level categories
+    child_count = db.session.query(Categories.id).filter(Categories.parent_id == category_id).count()
+    if child_count:
+        return None, {
+            "message": f"Cannot delete '{category.name}' because it still has {child_count} subcategory(ies).",
+            "status_code": 409
+        }
+
     try:
         deleted_name = category.name
         db.session.delete(category)

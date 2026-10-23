@@ -1,6 +1,5 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
-from app.middleware.auth import seller_required
 from app.schemas import ProductCreateSchema, ProductUpdateSchema, ProductResponseSchema
 from app.services import product_service
 
@@ -19,7 +18,6 @@ list_response_schema = ProductResponseSchema(many=True)
 
 @product_bp.route('', methods=['POST'])
 @jwt_required()
-@seller_required()
 def create_product():
     """Create a new product
     ---
@@ -66,9 +64,9 @@ def create_product():
     """
     data = request.get_json(silent=True) or {}
     validated_data = create_schema.load(data)
-    seller_id = int(get_jwt_identity())
-
-    product, error = product_service.create_product(seller_id, validated_data)
+    actor_id = int(get_jwt_identity())
+    actor_role = get_jwt().get('role')
+    product, error = product_service.create_product(actor_id, actor_role, validated_data)
     if error:
         return jsonify({"error": error["message"]}), error["status_code"]
 
@@ -97,6 +95,21 @@ def get_products():
         name: category_id
         type: integer
       - in: query
+        name: search
+        type: string
+        description: Matches product name, SKU (part number) or brand
+      - in: query
+        name: brand
+        type: string
+      - in: query
+        name: sort
+        type: string
+        enum: [newest, price_asc, price_desc, name]
+      - in: query
+        name: in_stock
+        type: boolean
+        description: Only products that can be ordered now (in stock or made to order)
+      - in: query
         name: name
         type: string
         description: Search product by name
@@ -118,6 +131,10 @@ def get_products():
     filters = {
         'category_id': request.args.get('category_id', type=int),
         'name': request.args.get('name', type=str),
+        'search': request.args.get('search', type=str) or request.args.get('q', type=str),
+        'brand': request.args.get('brand', type=str),
+        'sort': request.args.get('sort', type=str),
+        'in_stock': request.args.get('in_stock', default='false').lower() in ('1', 'true', 'yes'),
         'min_price': request.args.get('min_price', type=float),
         'max_price': request.args.get('max_price', type=float)
     }
@@ -136,6 +153,44 @@ def get_products():
             "has_prev": paginated_data.has_prev
         }
     }), 200       
+
+
+@product_bp.route('/lookup', methods=['GET'])
+def lookup_products():
+    """Bulk lookup by ids and/or SKUs (Quick Order, cart refresh)
+    ---
+    tags:
+      - Products
+    parameters:
+      - in: query
+        name: ids
+        type: string
+        description: Comma separated product ids
+      - in: query
+        name: skus
+        type: string
+        description: Comma separated SKUs / part numbers (case-insensitive)
+    responses:
+      200:
+        description: Matching active products
+    """
+    ids = [int(x) for x in request.args.get('ids', '').split(',') if x.strip().isdigit()]
+    skus = [x for x in request.args.get('skus', '').split(',') if x.strip()]
+    products = product_service.lookup_products(ids, skus)
+    return jsonify({"message": "Products retrieved successfully", "data": list_response_schema.dump(products)}), 200
+
+
+@product_bp.route('/brands', methods=['GET'])
+def list_brands():
+    """List brands that have active products
+    ---
+    tags:
+      - Products
+    responses:
+      200:
+        description: Brands with product counts
+    """
+    return jsonify({"message": "Brands retrieved successfully", "brands": product_service.list_brands()}), 200
 
 
 @product_bp.route('/<int:product_id>', methods=['GET'])
@@ -199,7 +254,6 @@ def get_product_by_slug(slug):
 
 @product_bp.route('/<int:product_id>', methods=['PUT'])
 @jwt_required()
-@seller_required()
 def update_product(product_id):
     """Update a product (Partial Update)
     ---
@@ -246,9 +300,9 @@ def update_product(product_id):
     """
     data = request.get_json(silent=True) or {}
     validated_data = update_schema.load(data)
-    seller_id = int(get_jwt_identity())
-
-    product, error = product_service.update_product(product_id, seller_id, validated_data)
+    actor_id = int(get_jwt_identity())
+    actor_role = get_jwt().get('role')
+    product, error = product_service.update_product(product_id, actor_id, actor_role, validated_data)
     if error:
         return jsonify({"error": error["message"]}), error["status_code"]
 
@@ -294,4 +348,3 @@ def delete_product(product_id):
         return jsonify({"error": error["message"]}), error["status_code"]
 
     return jsonify({"message": f"Product '{product.name}' has been successfully deactivated."}), 200
-        

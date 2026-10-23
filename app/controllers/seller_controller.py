@@ -69,6 +69,23 @@ def create_store():
     }), 201        
 
 
+@seller_bp.route('', methods=['GET'])
+def list_stores():
+    """List all active stores (suppliers)
+    ---
+    tags:
+      - Sellers
+    responses:
+      200:
+        description: Active stores, sorted by name
+    """
+    stores = seller_service.list_active_sellers()
+    return jsonify({
+        "message": "Stores retrieved successfully",
+        "stores": SellerResponseSchema(many=True).dump(stores)
+    }), 200
+
+
 @seller_bp.route('/<int:seller_id>', methods=['GET'])
 def get_store_profile(seller_id):
     """View public store profile

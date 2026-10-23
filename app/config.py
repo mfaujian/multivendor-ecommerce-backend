@@ -5,6 +5,8 @@ from datetime import timedelta
 # Load the environment variable from .env file
 load_dotenv()
 
+def _env_bool(name, default):
+    return os.getenv(name, str(default)).strip().lower() in ('1', 'true', 'yes', 'on')
 class Config:
     _raw_database_url = os.getenv('DATABASE_URL')
 
@@ -34,3 +36,9 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)
 
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', '*')
+
+    RATELIMIT_ENABLED = _env_bool('RATELIMIT_ENABLED', True)
+    RATELIMIT_LOGIN = os.getenv('RATELIMIT_LOGIN', '5 per minute')
+    RATELIMIT_REGISTER = os.getenv('RATELIMIT_REGISTER', '10 per hour')
+
+    TRUST_PROXY_HOPS = int(os.getenv('TRUST_PROXY_HOPS', '0'))
